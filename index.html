@@ -4,20 +4,128 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Student Pickup Route</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <!-- <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"> -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
 </head>
+
+<style>
+    body, html {
+        height: 100%;
+        margin: 0;
+    }
+
+    #map {
+        height: 100%;
+        width: 100%;
+    }
+
+
+</style>
 <body>
     <div id="map"></div>
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <!-- <script src="{{ url_for('static', filename='script.js') }}"></script> -->
+
+    <script>
+        let school = L.latLng(-1.098665, 37.011507);
+        let studentLocations = [
+            L.latLng(-1.098377, 37.010338),
+            L.latLng(-1.098851, 37.010680),
+            L.latLng(-1.099756, 37.009974),
+            L.latLng(-1.099487, 37.009231),
+            L.latLng(-1.099938, 37.008199),
+            L.latLng(-1.100749, 37.008326)
+        ];
+
+        let map = L.map('map').setView(school, 15);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+        }).addTo(map);
+
+        let schoolMarker = L.marker(school, { draggable: true }).addTo(map).bindPopup('School');
+        schoolMarker.on('click', () => removeMarker(schoolMarker));
+
+        let studentMarkers = [];
+        studentLocations.forEach((location, index) => {
+            const marker = L.marker(location, { draggable: true }).addTo(map).bindPopup(`Student ${index + 1}`);
+            marker.on('click', () => removeMarker(marker));
+            marker.on('dragend', (e) => updateLocation(index, e.target.getLatLng()));
+            studentMarkers.push(marker);
+        });
+
+        let routingControl = null;
+
+        // Function to update the route
+        async function updateRoute() {
+            const response = await fetch('/route', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    school: [school.lat, school.lng],
+                    students: studentLocations.map(loc => [loc.lat, loc.lng])
+                })
+            });
+            const route = await response.json();
+
+            if (routingControl) {
+                map.removeControl(routingControl);
+            }
+
+            routingControl = L.Routing.control({
+                waypoints: route.map(point => L.latLng(point[0], point[1])),
+                lineOptions: {
+                    styles: [{ color: 'blue', opacity: 0.8, weight: 5 }]
+                },
+                createMarker: function() { return null; } // Removes the default markers
+            }).addTo(map);
+
+            const routeBounds = L.latLngBounds(route.map(point => L.latLng(point[0], point[1])));
+            map.fitBounds(routeBounds);
+        }
+
+        // Function to add a new student marker by clicking on the map
+        map.on('click', (e) => {
+            const newLocation = e.latlng;
+            const marker = L.marker(newLocation, { draggable: true }).addTo(map).bindPopup('New Student');
+            marker.on('click', () => removeMarker(marker));
+            marker.on('dragend', (e) => {
+                const index = studentLocations.findIndex(loc => loc.equals(newLocation));
+                studentLocations[index] = e.target.getLatLng();
+                updateRoute();
+            });
+            studentLocations.push(newLocation);
+            studentMarkers.push(marker);
+            updateRoute();
+        });
+
+        // Function to remove marker
+        function removeMarker(marker) {
+            map.removeLayer(marker);
+            const index = studentMarkers.indexOf(marker);
+            if (index !== -1) {
+                studentMarkers.splice(index, 1);
+                studentLocations.splice(index, 1);
+                updateRoute();
+            } else if (marker === schoolMarker) {
+                school = null;
+                updateRoute();
+            }
+        }
+
+        // Function to update marker location after dragging
+        function updateLocation(index, newLocation) {
+            studentLocations[index] = newLocation;
+            updateRoute();
+        }
+
+        // Initial route calculation
+        updateRoute();
+
+    </script>
 </body>
 </html>
-
-
-
-
-
-
